@@ -221,93 +221,130 @@ namespace Jack
              */
             int open()
             {
-                //open input/output streams
-                check_error ( snd_pcm_open ( &fInputDevice,  (fCaptureName == NULL) ? fCardName : fCaptureName, SND_PCM_STREAM_CAPTURE, 0 ) );
-                check_error ( snd_pcm_open ( &fOutputDevice, (fPlaybackName == NULL) ? fCardName : fPlaybackName, SND_PCM_STREAM_PLAYBACK, 0 ) );
-
-                //get hardware input parameters
-                check_error ( snd_pcm_hw_params_malloc ( &fInputParams ) );
-                setAudioParams ( fInputDevice, fInputParams );
-
-                //get hardware output parameters
-                check_error ( snd_pcm_hw_params_malloc ( &fOutputParams ) )
-                setAudioParams ( fOutputDevice, fOutputParams );
-
-                // set the number of physical input and output channels close to what we need
-                fCardInputs 	= fSoftInputs;
-                fCardOutputs 	= fSoftOutputs;
-
-                snd_pcm_hw_params_set_channels_near(fInputDevice, fInputParams, &fCardInputs);
-                snd_pcm_hw_params_set_channels_near(fOutputDevice, fOutputParams, &fCardOutputs);
-
-                //set input/output param
-                check_error ( snd_pcm_hw_params ( fInputDevice,  fInputParams ) );
-                check_error ( snd_pcm_hw_params ( fOutputDevice, fOutputParams ) );
-
-                //set hardware buffers
-                if ( fSampleAccess == SND_PCM_ACCESS_RW_INTERLEAVED )
+                if ( fSoftInputs != 0 )
                 {
-                    fInputCardBuffer = aligned_calloc ( interleavedBufferSize ( fInputParams ), 1 );
-                    fOutputCardBuffer = aligned_calloc ( interleavedBufferSize ( fOutputParams ), 1 );
+                    //open input stream
+                    check_error ( snd_pcm_open ( &fInputDevice,  (fCaptureName == NULL) ? fCardName : fCaptureName, SND_PCM_STREAM_CAPTURE, 0 ) );
+
+                    //get hardware input parameters
+                    check_error ( snd_pcm_hw_params_malloc ( &fInputParams ) );
+                    setAudioParams ( fInputDevice, fInputParams );
+
+                    // set the number of physical input channels close to what we need
+                    fCardInputs 	= fSoftInputs;
+
+                    snd_pcm_hw_params_set_channels_near(fInputDevice, fInputParams, &fCardInputs);
+
+                    //set input param
+                    check_error ( snd_pcm_hw_params ( fInputDevice,  fInputParams ) );
+
+                    //set hardware buffers
+                    if ( fSampleAccess == SND_PCM_ACCESS_RW_INTERLEAVED )
+                    {
+                        fInputCardBuffer = aligned_calloc ( interleavedBufferSize ( fInputParams ), 1 );
+                    }
+                    else
+                    {
+                        for ( unsigned int i = 0; i < fCardInputs; i++ )
+                            fInputCardChannels[i] = aligned_calloc ( noninterleavedBufferSize ( fInputParams ), 1 );
+                    }
+
+                    //set floating point buffers needed by the dsp code
+                    fSoftInputs = max ( fSoftInputs, fCardInputs );
+                    assert ( fSoftInputs < 256 );
+
+                    for ( unsigned int i = 0; i < fSoftInputs; i++ )
+                    {
+                        fInputSoftChannels[i] = ( jack_default_audio_sample_t* ) aligned_calloc ( fBuffering, sizeof ( jack_default_audio_sample_t ) );
+                        for ( int j = 0; j < fBuffering; j++ )
+                            fInputSoftChannels[i][j] = 0.0;
+                    }
                 }
                 else
                 {
-                    for ( unsigned int i = 0; i < fCardInputs; i++ )
-                        fInputCardChannels[i] = aligned_calloc ( noninterleavedBufferSize ( fInputParams ), 1 );
-                    for ( unsigned int i = 0; i < fCardOutputs; i++ )
-                        fOutputCardChannels[i] = aligned_calloc ( noninterleavedBufferSize ( fOutputParams ), 1 );
+                    fCardInputs = 0;
                 }
-
-                //set floating point buffers needed by the dsp code
-                fSoftInputs = max ( fSoftInputs, fCardInputs );
-                assert ( fSoftInputs < 256 );
-                fSoftOutputs = max ( fSoftOutputs, fCardOutputs );
-                assert ( fSoftOutputs < 256 );
-
-                for ( unsigned int i = 0; i < fSoftInputs; i++ )
+                if ( fSoftOutputs != 0 )
                 {
-                    fInputSoftChannels[i] = ( jack_default_audio_sample_t* ) aligned_calloc ( fBuffering, sizeof ( jack_default_audio_sample_t ) );
-                    for ( int j = 0; j < fBuffering; j++ )
-                        fInputSoftChannels[i][j] = 0.0;
+                    //open output streams
+                    check_error ( snd_pcm_open ( &fOutputDevice, (fPlaybackName == NULL) ? fCardName : fPlaybackName, SND_PCM_STREAM_PLAYBACK, 0 ) );
+
+                    //get hardware output parameters
+                    check_error ( snd_pcm_hw_params_malloc ( &fOutputParams ) )
+                    setAudioParams ( fOutputDevice, fOutputParams );
+
+                    // set the number of physical output channels close to what we need
+                    fCardOutputs 	= fSoftOutputs;
+
+                    snd_pcm_hw_params_set_channels_near(fOutputDevice, fOutputParams, &fCardOutputs);
+
+                    //set output param
+                    check_error ( snd_pcm_hw_params ( fOutputDevice, fOutputParams ) );
+
+                    //set hardware buffers
+                    if ( fSampleAccess == SND_PCM_ACCESS_RW_INTERLEAVED )
+                    {
+                        fOutputCardBuffer = aligned_calloc ( interleavedBufferSize ( fOutputParams ), 1 );
+                    }
+                    else
+                    {
+                        for ( unsigned int i = 0; i < fCardOutputs; i++ )
+                            fOutputCardChannels[i] = aligned_calloc ( noninterleavedBufferSize ( fOutputParams ), 1 );
+                    }
+
+                    //set floating point buffers needed by the dsp code
+                    fSoftOutputs = max ( fSoftOutputs, fCardOutputs );
+                    assert ( fSoftOutputs < 256 );
+
+                    for ( unsigned int i = 0; i < fSoftOutputs; i++ )
+                    {
+                        fOutputSoftChannels[i] = ( jack_default_audio_sample_t* ) aligned_calloc ( fBuffering, sizeof ( jack_default_audio_sample_t ) );
+                        for ( int j = 0; j < fBuffering; j++ )
+                            fOutputSoftChannels[i][j] = 0.0;
+                    }
                 }
-
-                for ( unsigned int i = 0; i < fSoftOutputs; i++ )
+                else
                 {
-                    fOutputSoftChannels[i] = ( jack_default_audio_sample_t* ) aligned_calloc ( fBuffering, sizeof ( jack_default_audio_sample_t ) );
-                    for ( int j = 0; j < fBuffering; j++ )
-                        fOutputSoftChannels[i][j] = 0.0;
+                    fCardOutputs = 0;
                 }
                 return 0;
             }
 
             int close()
             {
-                snd_pcm_hw_params_free ( fInputParams );
-                snd_pcm_hw_params_free ( fOutputParams );
-                snd_pcm_close ( fInputDevice );
-                snd_pcm_close ( fOutputDevice );
+                if ( fSoftInputs != 0 )
+                {
+                    snd_pcm_hw_params_free ( fInputParams );
+                    snd_pcm_close ( fInputDevice );
 
-                for ( unsigned int i = 0; i < fSoftInputs; i++ )
-                    if ( fInputSoftChannels[i] )
-                        free ( fInputSoftChannels[i] );
+                    for ( unsigned int i = 0; i < fSoftInputs; i++ )
+                        if ( fInputSoftChannels[i] )
+                            free ( fInputSoftChannels[i] );
 
-                for ( unsigned int i = 0; i < fSoftOutputs; i++ )
-                    if ( fOutputSoftChannels[i] )
-                        free ( fOutputSoftChannels[i] );
+                    for ( unsigned int i = 0; i < fCardInputs; i++ )
+                        if ( fInputCardChannels[i] )
+                            free ( fInputCardChannels[i] );
 
-                for ( unsigned int i = 0; i < fCardInputs; i++ )
-                    if ( fInputCardChannels[i] )
-                        free ( fInputCardChannels[i] );
+                    if ( fInputCardBuffer )
+                        free ( fInputCardBuffer );
+                }
+                if ( fSoftOutputs != 0 )
+                {
 
-                for ( unsigned int i = 0; i < fCardOutputs; i++ )
-                    if ( fOutputCardChannels[i] )
-                        free ( fOutputCardChannels[i] );
+                    snd_pcm_hw_params_free ( fOutputParams );
+                    snd_pcm_close ( fOutputDevice );
 
-                if ( fInputCardBuffer )
-                    free ( fInputCardBuffer );
-                if ( fOutputCardBuffer )
-                    free ( fOutputCardBuffer );
+                    for ( unsigned int i = 0; i < fSoftOutputs; i++ )
+                        if ( fOutputSoftChannels[i] )
+                            free ( fOutputSoftChannels[i] );
 
+                    for ( unsigned int i = 0; i < fCardOutputs; i++ )
+                        if ( fOutputCardChannels[i] )
+                            free ( fOutputCardChannels[i] );
+
+                    if ( fOutputCardBuffer )
+                        free ( fOutputCardBuffer );
+                }
                 return 0;
             }
 
@@ -368,6 +405,7 @@ namespace Jack
             {
                 int count, s;
                 unsigned int c;
+                if ( fSoftInputs == 0 ) return 0;
                 switch ( fSampleAccess )
                 {
                     case SND_PCM_ACCESS_RW_INTERLEAVED :
@@ -435,6 +473,7 @@ namespace Jack
             {
                 int count, f;
                 unsigned int c;
+                if ( fSoftOutputs == 0 ) return 0;
             recovery:
                 switch ( fSampleAccess )
                 {
